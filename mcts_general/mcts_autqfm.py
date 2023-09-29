@@ -1,10 +1,10 @@
 import math
 import numpy
 
-from mcts_general.common.normalize import MinMaxStats
-from mcts_general.config import MCTSAgentConfig, MCTSContinuousAgentConfig
-from mcts_general.game import DeepCopyableGame, ContinuousGymGame
- 
+from common.normalize import MinMaxStats
+from autoqfm_config import MCTSAgentConfig
+from autoqfm_game import DeepCopyableGame
+
 
 def select_action(node, temperature):
     """
@@ -27,6 +27,9 @@ def select_action(node, temperature):
             visit_count_distribution
         )
         action = numpy.random.choice(actions, p=visit_count_distribution)
+
+    print('visit counts: ', visit_counts)
+    print('action selected: ', action)
     return action
 
 
@@ -245,60 +248,3 @@ class Node:
         for a, n in zip(actions, noise):
             self.children[a].prior = self.children[a].prior * (1 - frac) + n * frac
 
-
-class ContinuousNode(Node):
-
-    def expand(self, observation, reward, done, game, initial_visit_count=0):
-        self.reward = reward
-        self.observation = observation
-        self.game = game
-        self.visit_count = initial_visit_count
-        action = game.sample_action(simulation=True)
-        self.children[action] = ContinuousNode()
-
-
-class ContinuousMCTS(MCTS):
-    def __init__(self, config: MCTSContinuousAgentConfig):
-        super(ContinuousMCTS, self).__init__(config)
-        self.config = config
-        self.node_cls = ContinuousNode
-
-    def run(
-            self,
-            observation,
-            reward,
-            done,
-            game: ContinuousGymGame,
-            add_exploration_noise,
-            override_root_with=None,
-    ):
-        return super(ContinuousMCTS, self).run(
-            observation,
-            reward,
-            done,
-            game,
-            add_exploration_noise,
-            override_root_with
-        )
-
-    def select_child(self, node, min_max_stats):
-        # Progressive widening (See https://hal.archives-ouvertes.fr/hal-00542673v2/document)
-        C = self.config.C
-        alpha = self.config.alpha
-        while len(node.children) < math.ceil(C * node.visit_count ** alpha):
-            action = node.game.sample_action(simulation=True)
-            node.children[action] = ContinuousNode()
-
-        max_ucb = max(
-            self.ucb_score(node, child, min_max_stats)
-            for action, child in node.children.items()
-        )
-
-        action = numpy.random.choice(
-            [
-                action
-                for action, child in node.children.items()
-                if self.ucb_score(node, child, min_max_stats) == max_ucb
-            ]
-        )
-        return action, node.children[action]
